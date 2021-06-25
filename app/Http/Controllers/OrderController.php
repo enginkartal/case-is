@@ -6,87 +6,23 @@ use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use App\Http\Resources\OrderCollection;
 
 class OrderController extends Controller
 {
     /**
      * Display a listing of the resource.
      *
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\Response|object
      */
     public function index()
     {
-        $data = array(
-            0 =>
-                array(
-                    'id' => 1,
-                    'customerId' => 1,
-                    'items' =>
-                        array(
-                            0 =>
-                                array(
-                                    'productId' => 102,
-                                    'quantity' => 10,
-                                    'unitPrice' => '11.28',
-                                    'total' => '112.80',
-                                ),
-                        ),
-                    'total' => '112.80',
-                ),
-            1 =>
-                array(
-                    'id' => 2,
-                    'customerId' => 2,
-                    'items' =>
-                        array(
-                            0 =>
-                                array(
-                                    'productId' => 101,
-                                    'quantity' => 2,
-                                    'unitPrice' => '49.50',
-                                    'total' => '99.00',
-                                ),
-                            1 =>
-                                array(
-                                    'productId' => 100,
-                                    'quantity' => 1,
-                                    'unitPrice' => '120.75',
-                                    'total' => '120.75',
-                                ),
-                        ),
-                    'total' => '219.75',
-                ),
-            2 =>
-                array(
-                    'id' => 3,
-                    'customerId' => 3,
-                    'items' =>
-                        array(
-                            0 =>
-                                array(
-                                    'productId' => 102,
-                                    'quantity' => 6,
-                                    'unitPrice' => '11.28',
-                                    'total' => '67.68',
-                                ),
-                            1 =>
-                                array(
-                                    'productId' => 100,
-                                    'quantity' => 10,
-                                    'unitPrice' => '120.75',
-                                    'total' => '1207.50',
-                                ),
-                        ),
-                    'total' => '1275.18',
-                ),
-        );
-
         return response()->json([
             "success" => true,
             "title" => "",
             "detail" => "",
             "data" => [
-                "orders" => $data
+                "orders" => new  OrderCollection(Order::get())
             ]
         ])->setStatusCode(200);
     }
@@ -206,6 +142,14 @@ class OrderController extends Controller
         $discounts["discountedTotal"] = $order->total;
 
         $order_items = DB::table('order_items')->where(["order_id", $order_id])->get();
+
+        // discount_rules
+
+        // type > category - product - total -
+        // min quantity
+        // max  quantity
+        // discount_type > percent price
+
 
         foreach ($order_items as $order_item) {
 
