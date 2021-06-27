@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use App\Models\Order;
 use App\Models\Product;
@@ -53,7 +54,7 @@ class OrderController extends Controller
         try {
             $req_data = $request->all();
             $validator = \Validator::make($req_data, [
-                'customerId' => ['required', 'int']
+                'customer_id' => ['required', 'int']
             ]);
 
             if ($validator->fails()) {
@@ -61,9 +62,9 @@ class OrderController extends Controller
             }
 
             foreach ($req_data["items"] as $item) {
-                $p_id = $item["productId"];
+                $p_id = $item["product_id"];
                 $product = $this->getProduct($p_id);
-                if ($product["stock"] < 1) {
+                if (($product["stock"] < 1) || ($item["quantity"] > $product["stock"])) {
                     throw new \Exception($product["name"] . " bu ürüne ait yeterli stok mevcut değil");
                 }
             }
@@ -73,8 +74,30 @@ class OrderController extends Controller
             $new_order->customer_id = $req_data["customer_id"];
             $new_order->total = $req_data["total"];
             $new_order->save();
+            $order_id = $new_order->id;
+            foreach ($req_data["items"] as $item) {
+                $p_id = $item["product_id"];
+                $p_qtn = $item["quantity"];
+                $p_unit_price = $item["unit_price"];
+                $p_total = $item["total"];
+                DB::table("order_items")
+                    ->insert(
+                        [
+                            "order_id" => $order_id,
+                            "product_id" => $p_id,
+                            "quantity" => $p_qtn,
+                            "unit_price" => $p_unit_price,
+                            "total" => $p_total
+                        ]
+                    );
 
-            $res_data["title"] = $new_order->id . " order created";
+                DB::table('products')
+                    ->where('id', $p_id)
+                    ->decrement('stock', $p_qtn);
+            }
+
+
+            $res_data["title"] = $order_id . " order created";
 
             return response()->json($res_data)->setStatusCode(200);
         } catch (\Exception $e) {
@@ -126,22 +149,69 @@ class OrderController extends Controller
      */
     public function destroy($id)
     {
-        //
+        $res_data = [
+            "success" => true,
+            "title" => "",
+            "detail" => ""
+        ];
+        try {
+
+            DB::table('order_items')->where('order_id', '=', $id)->delete();
+
+            $order_ = Order::find($id);
+            $order_->delete();
+
+            $res_data["title"] = $id . " order deleted";
+
+            return response()->json($res_data)->setStatusCode(200);
+        } catch (\Exception $e) {
+            $res_data["success"] = false;
+            $res_data["error_message"] = $e->getMessage();
+            return response()->json($res_data)->setStatusCode(400);
+        }
     }
 
     public function getDiscoutCalculate($order_id)
     {
-        $discounts = [
-            "orderId" => $order_id,
-            "totalDiscount" => 0,
-            "discountedTotal" => ""
+        $res_discounts = [
+            "order_id" => $order_id,
+            "discounts" => [],
+            "total_discount" => 0,
+            "discounted_total" => 0,
         ];
 
-        $order = Order::where("id", $order_id)->get();
+        $order = Order::where("id", $order_id)->first();
+        $order_total = $order->total;
 
-        $discounts["discountedTotal"] = $order->total;
+        $total_discount_list = DB::table('order_discount_total')->where("type", "=", "total")->orderBy("priority")->get();
 
-        $order_items = DB::table('order_items')->where(["order_id", $order_id])->get();
+        foreach ($total_discount_list as $td) {
+            if ($td->type == "total") {
+
+                $d_value = $td->value;
+                $d_type = $td->discount_type;
+
+                if ($td->operator === "greater_than_or_equal") {
+                    if ($this->greater_than_or_equal($order_total, $d_value)) {
+                        if ($d_type == "percent") {
+                            $discount["discount_amount"] = ($order_total * (10 / 100));
+                            $discount["discount_reason"] = $td->reason;
+                            $discount["subtotal"] = round($order_total - ($order_total * (10 / 100)));
+
+                            array_push($res_discounts["discounts"], $discount);
+
+                            $res_discounts["discounted_total"] = $discount["subtotal"];
+                            $res_discounts["total_discount"] =+ $discount["discount_amount"];
+
+                        } else if ($d_type == "fixed") {
+
+                        }
+                    }
+
+                }
+            }
+        }
+
 
         // discount_rules
 
@@ -150,17 +220,12 @@ class OrderController extends Controller
         // max  quantity
         // discount_type > percent price
 
-
-        foreach ($order_items as $order_item) {
-
-        }
         return response()->json([
             "success" => true,
             "title" => "",
             "detail" => "",
-            "data" => [
-                "discounts" => $discounts
-            ]
+            "data" =>  $res_discounts
+
         ])->setStatusCode(200);
 
     }
@@ -169,6 +234,11 @@ class OrderController extends Controller
     {
         $product = Product::where("id", $product_id)->first();
         return $product;
+    }
+
+    private function greater_than_or_equal($v1, $v2)
+    {
+        return $v1 >= $v2;
     }
 
 }
